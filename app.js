@@ -1,10 +1,13 @@
 const express = require('express');
 const bodyParser = require('body-parser');
+const mongoose = require('mongoose');
 const feedRoutes = require('./routes/feed');
+const authRoutes = require('./routes/auth');
 
 app = express();
 
 app.use(bodyParser.json());
+app.use('/images', express.static('images'));
 
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -20,5 +23,24 @@ app.get('/', (req, res, next) => {
 });
 
 app.use('/feed', feedRoutes);
+app.use('/auth', authRoutes);
 
-app.listen(3000);
+app.use((err, req, res, next) => {
+  console.log(err)
+  res.status(err.statusCode || 500).json({
+    message: err.message,
+    data: err.data
+  });
+});
+
+const MONGODB_URI = 'mongodb://localhost:27017/node_complete_guide-rest';
+mongoose.connect(MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+  .then(() => {
+    app.listen(8080);
+  })
+  .catch(err => {
+    console.log(err)
+  });
