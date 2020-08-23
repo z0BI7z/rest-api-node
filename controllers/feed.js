@@ -3,7 +3,7 @@ const Post = require('../models/post');
 const User = require('../models/user');
 const fs = require('fs');
 const path = require('path');
-const user = require('../models/user');
+const io = require('../io');
 
 exports.getPosts = (req, res, next) => {
   const page = req.query.page || 1;
@@ -15,6 +15,7 @@ exports.getPosts = (req, res, next) => {
     .then(count => {
       totalItems = count;
       return Post.find()
+        .sort({ createdAt: -1 })
         .skip((page - 1) * perPage)
         .limit(perPage)
         .populate('creator')
@@ -60,7 +61,7 @@ exports.getPostById = (req, res, next) => {
     });
 }
 
-exports.postPost = (req, res, next) => {
+exports.postPost = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     res.status(402).json({
@@ -75,38 +76,38 @@ exports.postPost = (req, res, next) => {
     throw error;
   }
 
-  let creator;
-  const imageUrl = req.file.path;
-  const title = req.body.title;
-  const content = req.body.content;
-  const post = new Post({
-    title,
-    content,
-    imageUrl,
-    creator: req.userId
-  })
-  post.save()
-    .then(result => {
-      return User.findById(req.userId);
-    })
-    .then(user => {
-      user.posts.push(post);
-      creator = user;
-      return user.save();
-    })
-    .then(result => {
-      res.status(201).json({
-        message: 'Post added',
-        post,
-        creator
-      });
-    })
-    .catch(err => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
+  try {
+    const imageUrl = req.file.path;
+    const title = req.body.title;
+    const content = req.body.content;
+    const post = new Post({
+      title,
+      content,
+      imageUrl,
+      creator: req.userId
     });
+    await post.save();
+
+    const user = await User.findById(req.userId);
+    user.posts.push(post);
+    await user.save();
+
+    const completePost = await post.populate('creator').execPopulate();
+    io.getIo().emit('posts', {
+      action: 'create',
+      post
+    });
+    res.status(201).json({
+      message: 'Post added',
+      post: completePost,
+      creator: user
+    });
+  } catch (err) {
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
 }
 
 exports.updatePost = (req, res, next) => {
@@ -145,7 +146,14 @@ exports.updatePost = (req, res, next) => {
       post.imageUrl = imageUrl;
       return post.save();
     })
+    .then(post => {
+      return post.populate('creator').execPopulate();
+    })
     .then(result => {
+      io.getIo().emit('posts', {
+        action: 'update',
+        post: result
+      });
       res.status(200).json({
         message: 'Post updated.',
         post: result
@@ -162,6 +170,8 @@ exports.updatePost = (req, res, next) => {
 exports.deletePost = (req, res, next) => {
   const postId = req.params.postId;
 
+  let deletedPost;
+
   Post.findById(postId)
     .then(post => {
       if (!post) {
@@ -175,6 +185,7 @@ exports.deletePost = (req, res, next) => {
         throw error;
       }
 
+      deletedPost = post;
       clearImage(post.imageUrl);
       return post.remove()
     })
@@ -186,6 +197,10 @@ exports.deletePost = (req, res, next) => {
       return user.save();
     })
     .then(result => {
+      io.getIo().emit('posts', {
+        action: 'delete',
+        post: deletedPost
+      });
       res.status(201).json({
         message: 'Post deleted.',
         result

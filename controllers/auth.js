@@ -35,65 +35,62 @@ exports.signup = (req, res, next) => {
     });
 }
 
-exports.login = (req, res, next) => {
-  const { email, password } = req.body;
-  let loadedUser;
-  User.findOne({ email })
-    .then(user => {
-      if (!user) {
-        const error = new Error('No user with email found.');
-        error.statusCode = 404;
-        throw error;
-      }
-      loadedUser = user;
+exports.login = async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email })
+    if (!user) {
+      const error = new Error('No user with email found.');
+      error.statusCode = 404;
+      throw error;
+    }
 
-      return bcrypt.compare(password, user.password);
-    })
-    .then(match => {
-      if (!match) {
-        const error = new Error('Password invalid.');
-        error.statusCode = 401;
-        throw error;
-      }
-      const token = jwt.sign({
-        email,
-        userId: loadedUser._id.toString()
-      },
-        'secret',
-        {
-          expiresIn: '1h'
-        });
-      res.status(200).json({
-        token,
-        userId: loadedUser._id.toString()
-      });
-    })
-    .catch(err => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) {
+      const error = new Error('Password invalid.');
+      error.statusCode = 401;
+      throw error;
+    }
+
+    const token = jwt.sign({
+      email,
+      userId: loadedUser._id.toString()
+    }, 'secret', {
+      expiresIn: '1h'
     });
+    res.status(200).json({
+      token,
+      userId: loadedUser._id.toString()
+    });
+    return;
+  } catch (err) {
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+    return err;
+  }
 }
 
-exports.getStatus = (req, res, next) => {
-  User.findById(req.userId)
-    .then(user => {
-      if (!user) {
-        const error = new Error('No valid user found.');
-        error.statusCode = 404;
-        throw error;
-      }
-      res.status(200).json({
-        status: user.status
-      });
-    })
-    .catch(err => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
+exports.getStatus = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) {
+      const error = new Error('No valid user found.');
+      error.statusCode = 404;
+      throw error;
+    }
+    res.status(200).json({
+      status: user.status
     });
+    return;
+  } catch (err) {
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+    return err;
+  }
 }
 
 exports.updateStatus = (req, res, next) => {

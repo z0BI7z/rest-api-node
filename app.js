@@ -39,7 +39,10 @@ mongoose.connect(MONGODB_URI, {
   useUnifiedTopology: true
 })
   .then(() => {
-    app.listen(8080);
+    const server = app.listen(8080);
+    require('./io').init(server).on('connection', () => {
+      console.log('Connected client.')
+    });
   })
   .catch(err => {
     console.log(err)
